@@ -1,24 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-
-typedef struct{
-    void *base;
-    size_t offset;
-    size_t size;
-} LinearAlloc;
-
-LinearAlloc la = {0};
-
-void * LaAlloc(size_t size){
-    if(la.offset + size > la.size) {exit(1);}
-    void *region = ((char *)la.base) + la.offset;
-    la.offset += size;
-    return region;
-}
+#include "alloc.h"
 
 #define MAX_MEM 1024 * 1024 * 10
 #define FREQ_HASH_RANGE 1024
+
+LinearAlloc la = {0};
 
 struct FreqBucket {
     int freq;
@@ -32,7 +20,7 @@ void checkFreq(int f){
     FreqBucket **fb = freqHashTable + (f % FREQ_HASH_RANGE);
     checkBucket:
     if(!*fb){
-        *fb = (FreqBucket*)LaAlloc(sizeof(FreqBucket));
+        *fb = (FreqBucket*)LaAlloc(&la, sizeof(FreqBucket));
         (*fb)->freq = f;
         (*fb)->next = NULL;
         return;
@@ -47,8 +35,7 @@ void checkFreq(int f){
 
 int main(int argc, char **argv){
     FILE *input = fopen("day1.input", "r");  
-    la.size = MAX_MEM;
-    la.base = malloc(la.size);
+    LaInit(&la, MAX_MEM);
     int c, f, d, n;
 	c = f = d = n = 0;
     while(1){
