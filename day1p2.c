@@ -53,16 +53,14 @@ int main(int argc, char **argv){
 	c = f = d = n = 0;
     while(1){
         while((c = getc(input)) != EOF){
-            #define INCR f+=d;if(d)checkFreq(f);d=0;
             switch(c){
-                case '\n': INCR break;
+                case '\n': f+=d;if(d)checkFreq(f);d=0; break;
                 case '+': n = 0; break;
                 case '-': n = 1; break;
                 default: 
                     d = d * (d ? 10 : 1) + (n ? ('0' - c) : (c - '0'));
             }
         }
-        INCR    
         fseek(input, 0, SEEK_SET);
     }
     free(la.base);
