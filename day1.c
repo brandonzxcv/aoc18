@@ -1,11 +1,10 @@
 #include <stdio.h>
 
 int main(int argc, char **argv){
-    char c;
-    int f = 0;
-    int d = 0;
-    int n = 0;
-    while((c = getc(stdin)) != EOF){
+    FILE *input = fopen("day1.input", "r");
+    int c, f, d, n;
+    c = f = d = n = 0;
+    while((c = getc(input)) != EOF){
         #define INCR f+=d;d=0;
         switch(c){
             case '\n':
@@ -16,6 +15,6 @@ int main(int argc, char **argv){
         }
     }
     INCR
-
-    printf("Freq:%i\n", f);
+    printf("Frequency:%i\n", f);
+    fclose(input);
 }
