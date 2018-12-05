@@ -9,6 +9,7 @@ typedef struct{
 void LaInit(LinearAlloc *la, size_t size){
     la->size = size;
     la->base = malloc(size);
+    memset(la->base, 0, size);
     la->offset = 0;
 }
 
