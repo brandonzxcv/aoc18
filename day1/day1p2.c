@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "alloc.h"
+#include "../include/alloc.h"
 
 #define MAX_MEM 1024 * 1024 * 10
-#define FREQ_HASH_RANGE 1024
+#define FREQ_HASH_SIZE 1024
 
 LinearAlloc la = {0};
 
@@ -14,10 +14,10 @@ struct FreqBucket {
 };
 typedef struct FreqBucket FreqBucket;
 
-FreqBucket *freqHashTable[FREQ_HASH_RANGE] = {NULL};
+FreqBucket *freqHashTable[FREQ_HASH_SIZE] = {NULL};
 
 void checkFreq(int f){
-    FreqBucket **fb = freqHashTable + (f % FREQ_HASH_RANGE);
+    FreqBucket **fb = freqHashTable + (f % FREQ_HASH_SIZE);
     checkBucket:
     if(!*fb){
         *fb = (FreqBucket*)LaAlloc(&la, sizeof(FreqBucket));
@@ -49,7 +49,6 @@ int main(int argc, char **argv){
             }
         }
         fseek(input, 0, SEEK_SET);
-    }
-    free(la.base);
+    }    
     fclose(input);
 }
