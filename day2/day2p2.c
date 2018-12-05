@@ -12,7 +12,7 @@
 //Represents a string of 32 characters each with 32 possible values, as a sequence of 160 bits
 //A single letter is encoded using 5 bits. 1 bit is stored in each uint32. 
 //The uints are shifted to the left as more characters are encoded. 
-//The strings first letter will be stored at the most significant bit and the last letter will at the least significant bit.
+//The strings first letter will be stored at the most significant bit and the last letter at the least significant bit of each uint.
 // ex.
 //   10001010010000101010111110111111 = p1
 //   01010011111001101001101001111111 = p2
