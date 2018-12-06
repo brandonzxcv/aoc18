@@ -34,7 +34,7 @@ void checkFreq(int f){
 }
 
 int main(int argc, char **argv){
-    FILE *input = fopen("day1.input", "r");  
+    FILE *input = fopen("input.txt", "r");  
     LaInit(&la, MAX_MEM);
     int c, f, d, n;
 	c = f = d = n = 0;

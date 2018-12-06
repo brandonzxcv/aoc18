@@ -27,7 +27,7 @@ int PopcntStr(char *a, char *b) {
 }
 
 int main(void){
-    FILE *input = fopen("day2_100k.input", "r");
+    FILE *input = fopen("input.txt", "r");
     //read all the ids in at once, to avoid any IO overhead
     size_t bytesRead = fread(data, 1, MAX_DATA, input);
     if(bytesRead <= 0){

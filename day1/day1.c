@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 int main(int argc, char **argv){
-    FILE *input = fopen("day1.input", "r");
+    FILE *input = fopen("input.txt", "r");
     int c, f, d, n;
     c = f = d = n = 0;
     while((c = getc(input)) != EOF){

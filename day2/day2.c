@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 int main(int argc, char **argv){
-    FILE *input = fopen("day2.input", "r");
+    FILE *input = fopen("input.txt", "r");
     int c;
     //Bits 25 - 0 represent a letter index, and are set if the letter has been hit
     //We have 3 uint32s to keep track of each count (1,2,3). if a bit in l[2] is set, the letter was hit 3 times. (l[1] and l[0] bits will also be set in this case)
