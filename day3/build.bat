@@ -1,1 +1,1 @@
-cl /Wall /Ic:\dev\include day3.c /link /LIBPATH:c:\dev\lib\SDL\x86 /SUBSYSTEM:CONSOLE SDL2.lib SDL2main.lib
+cl /Wall /Ic:\dev\include\SDL /Ic:\dev\include\SDL2_ttf day3.c /link /LIBPATH:c:\dev\lib\SDL\x86 /LIBPATH:c:\dev\lib\SDL2_ttf\x86 /SUBSYSTEM:CONSOLE SDL2.lib SDL2main.lib SDL2_ttf.lib

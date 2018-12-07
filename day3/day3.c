@@ -3,10 +3,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#include "SDL/SDL.h"
 #include "../include/br.h"
 
 //#define P2
+#define VISUAL
+
 
 typedef struct {
     uint32_t x;
@@ -46,7 +47,38 @@ static int bvInterEntityCount;
 static Bv bvs[1 + 4 + 16];
 static int bvCount;
 
+static Bv *bvRoot;
+
 static int areaSum;
+
+#ifdef VISUAL
+#include "SDL_ttf.h"
+
+// typedef enum{
+//     RsBoxLoad,
+//     RsSplitBoundingVolume,
+//     RsInsertIntoBv
+// } RenderStepType;
+
+
+typedef struct{
+    SDL_Window *window;
+    SDL_Renderer *renderer;
+    int x;
+    int y;
+    //RenderStepType renderStep;
+    TTF_Font *fontCalibri16;
+} Visualizer;
+
+void InitVisual(void);
+void DestroyVisual(void);
+void RenderStepBoxLoad(void);
+void RenderStepSplitBv(void);
+void RenderStepInsertIntoBV(Aabb *bv, Aabb *insert, Aabb *intersection);
+
+static Visualizer vis;
+
+#endif
 
 Aabb ParseAabb(char *line){
     Aabb result = {0};
@@ -195,6 +227,10 @@ void SplitBv(Bv *bv, int depth){
     topLeft->y2 = bv->y + childHeight;
     topLeft->entities = bv->entities;
     topLeft->interEntities = bv->interEntities;
+    #ifdef VISUAL
+    RenderStepSplitBv();
+    #endif
+
     //top right
     Bv *topRight = bv->q[1] = bvs + bvCount++;
     topRight->x = topLeft->x2;
@@ -203,6 +239,10 @@ void SplitBv(Bv *bv, int depth){
     topRight->y2 = topLeft->y2;
     topRight->entities = bv->entities + childMaxBoxes;
     topRight->interEntities = bv->interEntities + childMaxBoxes;
+    #ifdef VISUAL
+    RenderStepSplitBv();
+    #endif
+
 
     //bottom left
     Bv *bottomLeft = bv->q[2] = bvs + bvCount++;
@@ -212,6 +252,10 @@ void SplitBv(Bv *bv, int depth){
     bottomLeft->y2 = bv->y2;
     bottomLeft->entities = bv->entities + childMaxBoxes * 2;
     bottomLeft->interEntities = bv->interEntities + childMaxBoxes * 2;
+    #ifdef VISUAL
+    RenderStepSplitBv();
+    #endif
+
     
     //bottom right
     Bv *bottomRight = bv->q[3] = bvs + bvCount++;
@@ -221,6 +265,10 @@ void SplitBv(Bv *bv, int depth){
     bottomRight->y2 = bv->y2;
     bottomRight->entities = bv->entities + childMaxBoxes * 3;
     bottomRight->interEntities = bv->interEntities + childMaxBoxes * 3;
+    #ifdef VISUAL
+    RenderStepSplitBv();
+    #endif
+
 
     SplitBv(topLeft, depth + 1);
     SplitBv(topRight, depth + 1);
@@ -243,40 +291,51 @@ void InsertIntoBV(Bv *bv, Aabb *a){
             #ifdef P2
             inter.id = a->id;
             #endif
+            #ifdef VISUAL
+            RenderStepInsertIntoBV((Aabb*)bv->q[i], a, &inter);
+            #endif
             InsertIntoBV(bv->q[i], &inter);
         }
     }
 }
 
 int main(int argc, char **argv){
-    FILE *input = fopen("input.txt", "r");
-
+    #ifdef VISUAL
+    InitVisual();
+    #endif
     //read all rects in to memory, and expand root bounding volume while doing so
+    FILE *input = fopen("input.txt", "r");
     char line[32];
-    Bv *bv = bvs + bvCount++;
-    bv->entities = bvEntities;
-    bv->interEntities = bvInterEntities;
+    bvRoot = bvs + bvCount++;
+    bvRoot->x = bvRoot->y = UINT32_MAX;
+    bvRoot->entities = bvEntities;
+    bvRoot->interEntities = bvInterEntities;
     while(fgets(line, 32, input)){
         if(boxCount >= MAX_BOXES){
             printf("Box limit reached.\n");
             return 1;
         }
         Aabb box = ParseAabb(line);
-        bv->x2 = MAX(box.x2, bv->x2);
-        bv->y2 = MAX(box.y2, bv->y2);
+        bvRoot->x = MIN(box.x, bvRoot->x);
+        bvRoot->y = MIN(box.y, bvRoot->y);
+        bvRoot->x2 = MAX(box.x2, bvRoot->x2);
+        bvRoot->y2 = MAX(box.y2, bvRoot->y2);
         boxes[boxCount++] = box;
+        #ifdef VISUAL
+        RenderStepBoxLoad();
+        #endif
     }
     fclose(input);
 
     //split bounding volume into smaller children volumes until max depth is reached
-    SplitBv(bv, 1);
+    SplitBv(bvRoot, 1);
 
-    printf("BV dimensions = [%u,%u], Total bvs = %u\n", bv->x2, bv->y2, bvCount);
+    printf("BV dimensions = [%u, %u, %u,%u], Total bvs = %u\n", bvRoot->x, bvRoot->y, bvRoot->x2, bvRoot->y2, bvCount);
 
     //insert the rects into their coresponding bounding volumes, splitting them into smaller rects if necessary
     for(int i = 0; i < boxCount; ++i){
         Aabb *box1 = boxes + i;
-        InsertIntoBV(bv, box1);
+        InsertIntoBV(bvRoot, box1);
         // printf("i: %i entities: %u\n", i, bvEntityCount);
     }
 
@@ -319,4 +378,240 @@ int main(int argc, char **argv){
         
     }
     #endif
+
+    #ifdef VISUAL
+    DestroyVisual();
+    #endif
+
+    return 0;
 }
+
+#ifdef VISUAL
+void InitVisual(void){
+    if(TTF_Init()==-1) {
+        printf("TTF_Init: %s\n", TTF_GetError());
+        exit(2);
+    }
+    vis.fontCalibri16 = TTF_OpenFont("calibri.ttf", 32);
+    if(!vis.fontCalibri16) {
+        printf("TTF_OpenFont: %s\n", TTF_GetError());
+        exit(2);
+    }
+    SDL_Init(SDL_INIT_VIDEO);
+    atexit(SDL_Quit);
+
+    vis.window = SDL_CreateWindow("AoC Day 3 Visualization", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1380, 1380, 0);
+    vis.renderer = SDL_CreateRenderer(vis.window, -1, 0);
+    vis.x = 10;
+    vis.y = 10;
+
+    SDL_SetRenderDrawBlendMode(vis.renderer, SDL_BLENDMODE_BLEND);
+    SDL_RenderSetScale(vis.renderer, 1.3f, 1.3f);
+}
+
+void DestroyVisual(void){
+    SDL_DestroyRenderer(vis.renderer);
+    SDL_DestroyWindow(vis.window);
+}
+
+void RenderBoxEx(Aabb *box, SDL_Color fill, SDL_Color outline){
+    SDL_SetRenderDrawColor(vis.renderer, fill.r, fill.g, fill.b, fill.a);
+    SDL_Rect rect = {vis.x + box->x, vis.y + box->y, box->x2 - box->x, box->y2 - box->y};
+    SDL_RenderFillRect(vis.renderer, &rect);
+    SDL_SetRenderDrawColor(vis.renderer, outline.r, outline.g, outline.b, outline.a);
+    SDL_RenderDrawRect(vis.renderer, &rect);
+}
+
+void RenderBox(Aabb *box, uint8_t r, uint8_t g, uint8_t b, uint8_t a){
+    SDL_SetRenderDrawColor(vis.renderer, r, g, b, a);
+    SDL_Rect rect = {vis.x + box->x, vis.y + box->y, box->x2 - box->x, box->y2 - box->y};
+    SDL_RenderFillRect(vis.renderer, &rect);
+    SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+    SDL_RenderDrawRect(vis.renderer, &rect);
+}
+
+void RenderBoundingVolumeRoot(void){
+    SDL_SetRenderDrawColor(vis.renderer, 255, 255, 255, 255);
+    SDL_Rect rect = {vis.x + bvRoot->x, vis.y + bvRoot->y, bvRoot->x2 - bvRoot->x, bvRoot->y2 - bvRoot->y};
+    SDL_RenderDrawRect(vis.renderer, &rect);
+}
+
+void RenderBvChild(Bv *bv, int withbg){
+    SDL_Rect rect = {vis.x + bv->x, vis.y + bv->y, bv->x2 - bv->x, bv->y2 - bv->y};
+    if(withbg){
+        SDL_SetRenderDrawColor(vis.renderer, 250, 50, 50, 25);    
+        SDL_RenderFillRect(vis.renderer, &rect);
+    }
+    SDL_SetRenderDrawColor(vis.renderer, 255, 255, 255, 255);
+    SDL_RenderDrawRect(vis.renderer, &rect);
+}
+
+void RenderText(char *str, int x, int y){
+    SDL_Color black = {0,0,0,255};
+    SDL_Surface* textSurface = TTF_RenderText_Blended(vis.fontCalibri16, str, black);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(vis.renderer, textSurface);
+    SDL_Rect renderQuad = { x, y, textSurface->w, textSurface->h };
+    SDL_RenderCopy(vis.renderer, texture, NULL, &renderQuad);
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(texture);
+}
+
+void RenderInfo(void){
+    char entityText[100];
+    snprintf(entityText, 100, "Entities: %u", boxCount);
+    RenderText(entityText, 20, 1100);
+    char bvDimText[100];
+    snprintf(bvDimText, 100, "Bounding Volume Size: [%ux, %uy, %uw, %uh]", bvRoot->x,bvRoot->y,bvRoot->x2 - bvRoot->x,bvRoot->y2 - bvRoot->y);
+    RenderText(bvDimText, 20, 1130);
+}
+
+void DrawBg(void){
+    SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(vis.renderer);
+    RenderBoundingVolumeRoot();
+    RenderInfo();
+}
+
+void RenderStepBoxLoad(void){
+    return;
+    DrawBg();
+
+    for(int i = 0; i < boxCount; ++i){
+        RenderBox(boxes + i, 255, 0, 0, 255);
+    }
+
+    SDL_RenderPresent(vis.renderer);
+
+    static int rsBoxLoadDrawDelay = 1;//150;
+    SDL_Delay(rsBoxLoadDrawDelay);
+    if(rsBoxLoadDrawDelay > 1) rsBoxLoadDrawDelay -= 1;
+}
+
+void RenderStepSplitBv(void){
+    DrawBg();
+
+    for(int i = 0; i < boxCount; ++i){
+        RenderBox(boxes + i, 150, 0, 0, 255);
+    }
+
+    for(int i = 1; i < bvCount; ++i){
+        RenderBvChild(bvs + i, 1);
+    }
+
+    SDL_RenderPresent(vis.renderer);
+    SDL_Delay(80);
+}
+
+static SDL_Color bvColors[210] = {
+    {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0xFF, 0xFF, 0x00, 0xFF},//yellow
+        {0xAA, 0x10, 0x10, 0xFF},//red
+        {0x0, 0xFF, 0x00, 0xFF},//green
+        {0x9b, 0xcd, 0xff, 0xFF},//light blue
+
+        {0xc1,0x9b,0xff,0xff},//purple
+        {0xF0,0x32,0xE6,0xFF},//magenta
+        {0xff,0x98,0x11,0xff},//orange
+        {0xbb,0xff,0x11,0xff},//greenish
+
+        {0xff,0xd4,0x00,0xff},//yellowish
+        {0x77,0x42,0xff,0xff},
+        {0x42,0xe2,0xff,0xff},
+        {0xff,0x88,0x00,0xff},//orangeish
+        
+        {0x0, 0x72,0xff,0xff},//blue
+        {0xa0,0x0,0x45,0xff},//red
+        {0x6e,0xff,0,0xff},//green
+        {0x80,0x80,0,0xff},//olive
+           {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+           {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+           {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0x00, 0xB3, 0xE6, 0xFF},
+        
+        {0xE6, 0xB3, 0x33, 0xFF},
+        {0x33, 0x66, 0xE6, 0xFF},
+        {0x99, 0x99, 0x66, 0xFF},
+        {0x99, 0xFF, 0x99, 0xFF},
+        {0xB3, 0x4D, 0x4D, 0xFF},
+
+        {0xFF, 0xB3, 0x99, 0xFF},
+        {0xFF, 0x33, 0xFF, 0xFF},
+        {0x80, 0xB3, 0x00, 0xFF},
+        {0x80, 0x99, 0x00, 0xFF}
+        //{0xE6, 0xE3, 0xB3, 0xFF}
+//     {0x66, 0x80, 0xB3},
+//     {0x66, 0x99, 0x1A}, 
+//     {0xFF, 0x99, 0xE6}
+};
+    
+    //       ', ', 
+    //        '', , ', '
+    //        '#CCFF1A', '#FF1A66', '#E6331A', '#33FFCC',
+    //       '#66994D', '#B366CC', '#4D8000', '#B33300', '#CC80CC', 
+    //       '#66664D', '#991AFF', '#E666FF', '#4DB3FF', '#1AB399',
+    //       '#E666B3', '#33991A', '#CC9999', '#B3B31A', '#00E680', 
+    //       '#4D8066', '#809980', '#E6FF80', '#1AFF33', '#999933',
+    //       '#FF3380', '#CCCC00', '#66E64D', '#4D80CC', '#9900B3', 
+    //       '#E64D66', '#4DB380', '#FF4D4D', '#99E6E6', '#6666FF'];
+
+void RenderStepInsertIntoBV(Aabb *bv, Aabb *insert, Aabb *intersection){
+    static int timesDrawn = 0;
+    fadeBv:
+    DrawBg();
+
+    for(int i = 0; i < boxCount; ++i){
+        RenderBox(boxes + i, 25, 0, 0, 255);
+    }
+
+     for(int i = 1; i < bvCount; ++i){
+        RenderBvChild(bvs + i, 0);
+    }
+
+    RenderBoxEx(insert, (SDL_Color){0, 0, 0, 255}, (SDL_Color){255, 0, 0, 255});
+    //RenderBox(intersection, 255, 255, 255, 255);
+
+    for(int i = 0; i < bvCount; ++i){
+        Bv *currBv = bvs + i;
+        if(currBv->entityCount <= 0) continue;
+
+        for(int ei = 0; ei < currBv->entityCount; ++ei){
+            Aabb *ent = currBv->entities + ei;
+            RenderBox(ent, bvColors[i].r, bvColors[i].g, bvColors[i].b, 255);
+        }
+    }
+
+    if(timesDrawn < 50){
+        static uint8_t bvAlpha = 255;
+        int alphaChange = 2 + (timesDrawn/50) * 10;
+        while(bvAlpha - alphaChange > 0){
+            bvAlpha-=alphaChange;
+            SDL_SetRenderDrawColor(vis.renderer, 100, 100, 100, bvAlpha);
+            SDL_Rect rect = {vis.x + bv->x, vis.y + bv->y, bv->x2 - bv->x, bv->y2 - bv->y};
+            SDL_RenderFillRect(vis.renderer, &rect); 
+
+            SDL_RenderPresent(vis.renderer);        
+            SDL_Delay(1);
+            goto fadeBv;
+        }
+        bvAlpha = 255;
+    }
+    
+    ++timesDrawn;
+    SDL_RenderPresent(vis.renderer);
+
+}
+
+#endif
