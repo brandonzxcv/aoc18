@@ -2,18 +2,57 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
+#include "SDL/SDL.h"
+#include "../include/br.h"
 
-#define MAX_BOXES 4096
+//#define P2
 
 typedef struct {
     uint32_t x;
     uint32_t y;
     uint32_t x2;
-    uint32_t y2;    
+    uint32_t y2;
+    #ifdef P2
+    uint32_t id;
+    #endif
 } Aabb;
+
+struct Bv {
+    uint32_t x;
+    uint32_t y;
+    uint32_t x2;
+    uint32_t y2;    
+    struct Bv *q[4];
+    Aabb *entities;
+    int entityCount;
+    Aabb *interEntities;
+    int interEntityCount; 
+};
+typedef struct Bv Bv;
+
+#define MAX_BOXES 4096
+
+static Aabb boxes[MAX_BOXES];
+static int boxCount;
+
+static Aabb bvEntities[MAX_BOXES];
+static int bvEntityCount;
+
+static Aabb bvInterEntities[MAX_BOXES];
+static int bvInterEntityCount;
+
+#define BV_DEPTH 2
+static Bv bvs[1 + 4 + 16];
+static int bvCount;
+
+static int areaSum;
 
 Aabb ParseAabb(char *line){
     Aabb result = {0};
+    #ifdef P2
+    result.id = atoi(line + 1);
+    #endif
     line = strchr(line, '@') + 1;
     result.x = atoi(line);
     line = strchr(line, ',') + 1;
@@ -44,60 +83,21 @@ int Contains(Aabb *a, Aabb *b){
     return (b->x >= a->x && b->x2 <= a->x2 && b->y >= a->y && b->y2 <= a->y2);
 }
 
+int AreEqual(Aabb *a, Aabb *b){
+    return (a->x == b->x && a->x2 == b->x2 && a->y == b->y && a->y2 == b->y2);
+}
+
 int GetArea(Aabb *a){
     return (a->x2 - a->x) * (a->y2 - a->y);
-}
-
-void FlagAabb(Aabb *b){
-    b->x = UINT32_MAX;
-}
-
-int IsFlag(Aabb *b){
-    return b->x == UINT32_MAX;
-}
-
-static Aabb boxes[MAX_BOXES];
-static int boxCount;
-
-static Aabb intersections[MAX_BOXES];
-static int intersectionCount;
-static int areaSum;
-
-// void TakeSpace(Aabb *b){
-//     int areaLeft = AabbArea(b);
-//     Aabb intersection = {0};
-//     for(int i = 0; i < tboxCount; ++i){
-//         Aabb *tb = tboxes + i;
-//         if(AabbAreIntersecting(tb, b)){
-//             intersection = AabbGetIntersection(tb, b);
-//             //areaLeft
-//         }
-//     }
-// }
-int SortFunc (const void * a, const void * b) {
-    if(*(uint32_t*)a == *(uint32_t*)b ) return 0;
-    return *(uint32_t*)a < *(uint32_t*)b ? -1 : 1;
-}
-
-void PrintArrayU32(uint32_t *arr, int n){
-    printf("(");
-    for(int i = 0; i < n; ++i){
-        printf("%u,", arr[i]);
-    }
-    printf(")\n");
 }
 
 void PrintAabb(Aabb *a){
     printf("p1[x:%u,y:%u] p2[x2:%u,y2:%u]\n", a->x, a->y, a->x2, a->y2);
 }
 
-int AreEqual(Aabb *a, Aabb *b){
-    return (a->x == b->x && a->x2 == b->x2 && a->y == b->y && a->y2 == b->y2);
-}
+void BvPushIntersection(Bv *bv, Aabb *inter);
 
-void PushIntersection(Aabb *inter);
-
-int GenDifference2(Aabb *a, Aabb *subtract){
+int GenDifference(Bv *bv, Aabb *a, Aabb *subtract){
     if(Contains(subtract, a)) return 0;
     Aabb intersection = {0};
     if(!GetIntersection(a, subtract, &intersection)){
@@ -148,169 +148,175 @@ int GenDifference2(Aabb *a, Aabb *subtract){
     }
 
     if(splitTop){
-        PushIntersection(splitTop);
+        BvPushIntersection(bv, splitTop);
     }
     if(splitLeft){
-        PushIntersection(splitLeft);
+        BvPushIntersection(bv, splitLeft);
     }
     if(splitBottom){
-        PushIntersection(splitBottom);
+        BvPushIntersection(bv, splitBottom);
     }
     if(splitRight){
-        PushIntersection(splitRight);
+        BvPushIntersection(bv, splitRight);
     }
 
     return 1;
 }
 
-int GenDifference(Aabb *a, Aabb *subtract){
-    if(Contains(subtract, a)) return 0;
-    Aabb intersection = {0};
-    if(!GetIntersection(a, subtract, &intersection)){
-        return 0;
-    }
-    // if(AreEqual(a, &intersection)){
-    //     printf("No diff\n");
-    //     return 1; //the subtraction consumes all of a, so we can discard it
-    // }
-    
-    //printf("Subtracting:"); PrintAabb(subtract);
-    uint32_t xlist[4] = {a->x, a->x2, UINT32_MAX, UINT32_MAX};
-    uint32_t ylist[4] = {a->y, a->y2, UINT32_MAX, UINT32_MAX};
-    int xCount = 2;
-    int yCount = 2;
-
-    if(subtract->x > a->x) xlist[++xCount - 1] = subtract->x;
-    if(subtract->x2 < a->x2) xlist[++xCount -1] = subtract->x2;
-    if(subtract->y > a->y) ylist[++yCount -1] = subtract->y;
-    if(subtract->y2 < a->y2) ylist[++yCount -1] = subtract->y2;
-    //sort coordinates
-    qsort(xlist, xCount, sizeof(uint32_t), SortFunc);
-    qsort(ylist, yCount, sizeof(uint32_t), SortFunc);
-    //remove duplicate elements
-    for(int i = 3; i > 1; --i){
-        if(xlist[i] != UINT32_MAX && xlist[i] == xlist[i - 1]) {
-            xlist[i] = UINT32_MAX;
-            --xCount;
-        }
-        if(ylist[i] != UINT32_MAX && ylist[i] == ylist[i - 1]){
-            ylist[i] = UINT32_MAX;  
-            --yCount;
-        } 
-    }
-
-    //printf("X's:"); PrintArrayU32(xlist, xCount);
-   // printf("Y's:"); PrintArrayU32(ylist, yCount);
-
-    Aabb splits[9] = {0};
-    int splitCount = 0;
-
-    for(int i = 0; i < xCount - 1; ++i){
-        for(int j = 0; j < yCount - 1; ++j){
-            Aabb *split = splits + splitCount++;
-            split->x = xlist[i];
-            split->y = ylist[j];
-            split->x2 = xlist[i + 1];
-            split->y2 = ylist[j + 1];
-        }
-    }
-
-    //printf("%i splits:\n", splitCount);
-    for(int i = 0; i < splitCount; ++i){
-        if(AreEqual(splits + i, &intersection)) continue; //discard original intersection, we only want difference
-        PushIntersection(splits + i);
-    }
-
-    return 1;
-}
-
-void PushIntersection(Aabb *inter){
-    //printf("Pushing "); PrintAabb(inter);
-
+void BvPushIntersection(Bv *bv, Aabb *inter){
     int genDiff = 0;
-    for(int i = 0; i < intersectionCount; ++i){
-        if(Contains(intersections +i, inter)) return;
-        if(GenDifference2(inter, intersections + i)){
+    for(int i = 0; i < bv->interEntityCount; ++i){
+        if(Contains(bv->interEntities + i, inter)) return;
+        if(GenDifference(bv, inter, bv->interEntities + i)){
             genDiff = 1;
-            //if we do get a difference, the splits will call this method recursively, so we are done checking with this 
+            //if we do get a difference, the intersection has been split, and the splits have been added
             break;
         } 
     }
-    //if we didnt split the rect, then it didnt collide with anything, add it to the global intersections
+    //if we didnt split the rect, then it didnt collide with anything
     if(!genDiff){
-        intersections[intersectionCount++] = *inter;    
-    }
-    
+        bv->interEntities[bv->interEntityCount++] = *inter;
+        ++bvInterEntityCount;
+    }    
 }
 
-int main(void){
+void SplitBv(Bv *bv, int depth){
+    if(depth > BV_DEPTH) return;
+
+    uint32_t childWidth = (bv->x2 - bv->x) / 2;
+    uint32_t childHeight = (bv->y2 - bv->y) / 2;
+    uint32_t childMaxBoxes = (MAX_BOXES / (int)pow(4, depth));
+
+    //top left
+    Bv *topLeft = bv->q[0] = bvs + bvCount++;
+    topLeft->x = bv->x;
+    topLeft->y = bv->y;
+    topLeft->x2 = bv->x + childWidth;
+    topLeft->y2 = bv->y + childHeight;
+    topLeft->entities = bv->entities;
+    topLeft->interEntities = bv->interEntities;
+    //top right
+    Bv *topRight = bv->q[1] = bvs + bvCount++;
+    topRight->x = topLeft->x2;
+    topRight->y = topLeft->y;
+    topRight->x2 = bv->x2;
+    topRight->y2 = topLeft->y2;
+    topRight->entities = bv->entities + childMaxBoxes;
+    topRight->interEntities = bv->interEntities + childMaxBoxes;
+
+    //bottom left
+    Bv *bottomLeft = bv->q[2] = bvs + bvCount++;
+    bottomLeft->x = topLeft->x;
+    bottomLeft->y = topLeft->y2;
+    bottomLeft->x2 = topLeft->x2;
+    bottomLeft->y2 = bv->y2;
+    bottomLeft->entities = bv->entities + childMaxBoxes * 2;
+    bottomLeft->interEntities = bv->interEntities + childMaxBoxes * 2;
+    
+    //bottom right
+    Bv *bottomRight = bv->q[3] = bvs + bvCount++;
+    bottomRight->x = topRight->x;
+    bottomRight->y = topRight->y2;
+    bottomRight->x2 = topRight->x2;
+    bottomRight->y2 = bv->y2;
+    bottomRight->entities = bv->entities + childMaxBoxes * 3;
+    bottomRight->interEntities = bv->interEntities + childMaxBoxes * 3;
+
+    SplitBv(topLeft, depth + 1);
+    SplitBv(topRight, depth + 1);
+    SplitBv(bottomLeft, depth + 1);
+    SplitBv(bottomRight, depth + 1);
+
+    return;
+}
+
+void InsertIntoBV(Bv *bv, Aabb *a){
+    if(!bv->q[0]){
+        bv->entities[bv->entityCount++] = *a;
+        //printf("inserted %i\n", bv->entityCount);
+        ++bvEntityCount;
+        return;
+    }
+    Aabb inter = {0};
+    for(int i = 0; i < 4; ++i){
+        if(GetIntersection((Aabb*)bv->q[i], a, &inter)){
+            #ifdef P2
+            inter.id = a->id;
+            #endif
+            InsertIntoBV(bv->q[i], &inter);
+        }
+    }
+}
+
+int main(int argc, char **argv){
     FILE *input = fopen("input.txt", "r");
 
+    //read all rects in to memory, and expand root bounding volume while doing so
     char line[32];
+    Bv *bv = bvs + bvCount++;
+    bv->entities = bvEntities;
+    bv->interEntities = bvInterEntities;
     while(fgets(line, 32, input)){
         if(boxCount >= MAX_BOXES){
             printf("Box limit reached.\n");
             return 1;
         }
-        boxes[boxCount++] = ParseAabb(line);
+        Aabb box = ParseAabb(line);
+        bv->x2 = MAX(box.x2, bv->x2);
+        bv->y2 = MAX(box.y2, bv->y2);
+        boxes[boxCount++] = box;
     }
     fclose(input);
 
-    //go through all boxes and get intersections
-    Aabb intersection = {0};
+    //split bounding volume into smaller children volumes until max depth is reached
+    SplitBv(bv, 1);
+
+    printf("BV dimensions = [%u,%u], Total bvs = %u\n", bv->x2, bv->y2, bvCount);
+
+    //insert the rects into their coresponding bounding volumes, splitting them into smaller rects if necessary
     for(int i = 0; i < boxCount; ++i){
         Aabb *box1 = boxes + i;
-        for(int j = i + 1; j < boxCount; ++j){
-            Aabb *box2 = boxes + j;
-            if(GetIntersection(box1, box2, &intersection)){
-                PushIntersection(&intersection);
+        InsertIntoBV(bv, box1);
+        // printf("i: %i entities: %u\n", i, bvEntityCount);
+    }
+
+    //for every bounding volume that contains entities, do an intersection test with the other entities within the volume, and store the intersections in a separate layer
+    //the intersections will be tested separately amongst themselves and we will subtract the differences between them, in order to end up with no overlapping intersections
+    for(int i = 0; i < bvCount; ++i){
+        Bv *currBv = bvs + i;
+        if(currBv->entityCount <= 0) continue;
+
+        Aabb intersection = {0};
+
+        for(int ei = 0; ei < currBv->entityCount; ++ei){
+            Aabb *b1 = currBv->entities + ei;
+            for(int j = ei + 1; j < currBv->entityCount; ++j){
+                Aabb *b2 = currBv->entities + j;
+                if(GetIntersection(b1, b2, &intersection)){
+                    BvPushIntersection(currBv, &intersection);
+                    #ifdef P2 //part 2 hack
+                    boxes[b1->id - 1].id = 1;
+                    boxes[b2->id - 1].id = 1;
+                    #endif
+                }
             }
-                //TakeSpace(&intersection);
-//                area += AabbArea(interBoxes + (interCount - 1));
+        }
+        
+        //we can sum the areas of the rects on the intersection layer to get the answer to Part 1
+        for(int ei = 0; ei < currBv->interEntityCount; ++ei){
+            areaSum += GetArea(currBv->interEntities + ei);
         }
     }
 
-    for(int i = 0; i < intersectionCount; ++i){
-        areaSum += GetArea(intersections + i);
+    printf("Part1 total area = %i Intersections = %i\n", areaSum, bvInterEntityCount);
+
+    #ifdef P2
+    for(int i = 0; i < boxCount; ++i){
+        if(boxes[i].id != 1){
+            printf("Part2 ID = %u\n", boxes[i].id);
+            break;
+        }
+        
     }
-    printf("total area %i inters = %i\n", areaSum, intersectionCount);
-
-    // for(int i = 0; i < intersectionCount; ++i){
-    //     Aabb *b1 = intersections + i;
-    //     int area1 = AabbArea(b1);
-    //     for(int j = i + 1; j < intersectionCount; ++j){
-    //         Aabb *b2 = intersections + j;
-    //         int area2 = AabbArea(b2);
-    //         if(AreIntersecting(b1, b2)){
-    //             intersection = GetIntersection(b1, b2);
-    //             int iArea = AabbArea(&intersection);
-    //             if(!IsFlag(b1) && !IsFlag(b2)){
-    //                 areaSum += (area1 + area2) - iArea;
-    //                 FlagAabb(b1);
-    //                 FlagAabb(b2);
-    //                 continue; 
-    //             } else if(IsFlag(b1) && !IsFlag(b2)){
-    //                 areaSum += area2 - iArea;
-    //                 FlagAabb(b2);
-    //                 continue;
-    //             } else if(!IsFlag(b1) && IsFlag(b2)){
-    //                 areaSum += area1 - iArea;
-    //                 FlagAabb(b1);
-    //                 continue;
-    //             }
-    //         }
-    //     }
-    //     if(!IsFlag(b1)){
-    //         areaSum += area1;
-    //     }
-    // }
-
-
-
-    //area += AabbArea(interBoxes + (interCount - 1));
-
-
-    printf("%i", areaSum);
-
-    
+    #endif
 }

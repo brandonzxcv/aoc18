@@ -1,0 +1,1 @@
+cl /Wall /Ic:\dev\include day3.c /link /LIBPATH:c:\dev\lib\SDL\x86 /SUBSYSTEM:CONSOLE SDL2.lib SDL2main.lib
