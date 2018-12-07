@@ -67,7 +67,7 @@ typedef struct{
     int x;
     int y;
     //RenderStepType renderStep;
-    TTF_Font *fontCalibri16;
+    TTF_Font *mainFont;
 } Visualizer;
 
 void InitVisual(void);
@@ -75,9 +75,51 @@ void DestroyVisual(void);
 void RenderStepBoxLoad(void);
 void RenderStepSplitBv(void);
 void RenderStepInsertIntoBV(Aabb *bv, Aabb *insert, Aabb *intersection);
+void RenderStepTransitionToInterTest(void);
+void RenderStepInterTest(Aabb *inter);
+void RenderStepInterSteprResultsTransition(void);
+
 
 static Visualizer vis;
 
+
+static SDL_Color bvColors[30] = {
+    {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0,0,0,0},
+        {0x9b, 0xcd, 0xff, 0xFF},//light blue
+        {0xFF, 0xFF, 0x00, 0xFF},//yellow
+        {0xAA, 0x10, 0x10, 0xFF},//red
+        {0x0, 0xFF, 0x00, 0xFF},//green
+        
+
+        {0xc1,0x9b,0xff,0xff},//purple
+        {0xF0,0x32,0xE6,0xFF},//magenta
+        {0xff,0x98,0x11,0xff},//orange
+        {0xbb,0xff,0x11,0xff},//greenish
+
+        {0xff,0xd4,0x00,0xff},//yellowish
+        {0x77,0x42,0xff,0xff},
+        {0x42,0xe2,0xff,0xff},
+        {0xff,0x88,0x00,0xff},//orangeish
+        
+        {0x0, 0x72,0xff,0xff},//blue
+        {0xa0,0x0,0x45,0xff},//red
+        {0x6e,0xff,0,0xff},//green
+        {0x80,0x80,0,0xff},//olive
+        //{0xE6, 0xE3, 0xB3, 0xFF}
+//     {0x66, 0x80, 0xB3},
+//     {0x66, 0x99, 0x1A}, 
+//     {0xFF, 0x99, 0xE6}
+};
+    
+static SDL_Color SdlColorWhite = {255,255,255,255};
+static SDL_Color SdlColorRed = {255,0,0,255};
+
+static Aabb *rsInterStepBox1;
+static Aabb *rsInterStepBox2;
 #endif
 
 Aabb ParseAabb(char *line){
@@ -196,20 +238,20 @@ int GenDifference(Bv *bv, Aabb *a, Aabb *subtract){
 }
 
 void BvPushIntersection(Bv *bv, Aabb *inter){
-    int genDiff = 0;
     for(int i = 0; i < bv->interEntityCount; ++i){
         if(Contains(bv->interEntities + i, inter)) return;
         if(GenDifference(bv, inter, bv->interEntities + i)){
-            genDiff = 1;
             //if we do get a difference, the intersection has been split, and the splits have been added
-            break;
+            return;
         } 
     }
     //if we didnt split the rect, then it didnt collide with anything
-    if(!genDiff){
-        bv->interEntities[bv->interEntityCount++] = *inter;
-        ++bvInterEntityCount;
-    }    
+    bv->interEntities[bv->interEntityCount++] = *inter;
+    ++bvInterEntityCount;
+    #ifdef VISUAL
+    if(bv - bvs == 5)
+        RenderStepInterTest(inter);
+    #endif
 }
 
 void SplitBv(Bv *bv, int depth){
@@ -269,7 +311,6 @@ void SplitBv(Bv *bv, int depth){
     RenderStepSplitBv();
     #endif
 
-
     SplitBv(topLeft, depth + 1);
     SplitBv(topRight, depth + 1);
     SplitBv(bottomLeft, depth + 1);
@@ -304,7 +345,7 @@ int main(int argc, char **argv){
     InitVisual();
     #endif
     //read all rects in to memory, and expand root bounding volume while doing so
-    FILE *input = fopen("input.txt", "r");
+    FILE *input = fopen("input_alex.txt", "r");
     char line[32];
     bvRoot = bvs + bvCount++;
     bvRoot->x = bvRoot->y = UINT32_MAX;
@@ -338,7 +379,9 @@ int main(int argc, char **argv){
         InsertIntoBV(bvRoot, box1);
         // printf("i: %i entities: %u\n", i, bvEntityCount);
     }
-
+    #ifdef VISUAL
+    RenderStepTransitionToInterTest();
+    #endif
     //for every bounding volume that contains entities, do an intersection test with the other entities within the volume, and store the intersections in a separate layer
     //the intersections will be tested separately amongst themselves and we will subtract the differences between them, in order to end up with no overlapping intersections
     for(int i = 0; i < bvCount; ++i){
@@ -352,6 +395,10 @@ int main(int argc, char **argv){
             for(int j = ei + 1; j < currBv->entityCount; ++j){
                 Aabb *b2 = currBv->entities + j;
                 if(GetIntersection(b1, b2, &intersection)){
+                    #ifdef VISUAL
+                    rsInterStepBox1 = b1;
+                    rsInterStepBox2 = b2;
+                    #endif
                     BvPushIntersection(currBv, &intersection);
                     #ifdef P2 //part 2 hack
                     boxes[b1->id - 1].id = 1;
@@ -366,6 +413,9 @@ int main(int argc, char **argv){
             areaSum += GetArea(currBv->interEntities + ei);
         }
     }
+    #ifdef VISUAL
+    RenderStepInterSteprResultsTransition();
+    #endif
 
     printf("Part1 total area = %i Intersections = %i\n", areaSum, bvInterEntityCount);
 
@@ -392,8 +442,8 @@ void InitVisual(void){
         printf("TTF_Init: %s\n", TTF_GetError());
         exit(2);
     }
-    vis.fontCalibri16 = TTF_OpenFont("calibri.ttf", 32);
-    if(!vis.fontCalibri16) {
+    vis.mainFont = TTF_OpenFont("calibri.ttf", 40);
+    if(!vis.mainFont) {
         printf("TTF_OpenFont: %s\n", TTF_GetError());
         exit(2);
     }
@@ -414,12 +464,53 @@ void DestroyVisual(void){
     SDL_DestroyWindow(vis.window);
 }
 
+typedef enum{
+    EaseTypeInOutQuad,
+    EaseTypeInQuad
+} EaseType;
+
+float T_EaseInQuad(float t){
+    return t*t;
+}
+float T_EaseInOutQuad(float t) {
+    return (t < 0.5f) ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+float Lerp(float start, float end, float t){
+    return start + (end - start) * t;
+}
+
+float Ease(EaseType easeType, float startTime, float duration, float start, float end) {
+    float t = (SDL_GetTicks() / 1000.0f) - startTime;
+    if(t >= duration) return end;
+    t = t / duration;
+    switch(easeType){
+        case EaseTypeInOutQuad: return Lerp(start, end, T_EaseInOutQuad(t));
+        case EaseTypeInQuad: return Lerp(start, end, T_EaseInQuad(t));
+    }
+    
+};
+
+SDL_Color RandomColor(int i){
+    int rgb = (int)floor(abs(sinf(i) * 16777215)) % 16777215;    
+    return (SDL_Color) {
+        rgb & 0xFF,
+        (rgb >> 8) & 0xFF,
+        (rgb >> 16) & 0xFF,
+        255
+    };
+}
+
 void RenderBoxEx(Aabb *box, SDL_Color fill, SDL_Color outline){
-    SDL_SetRenderDrawColor(vis.renderer, fill.r, fill.g, fill.b, fill.a);
     SDL_Rect rect = {vis.x + box->x, vis.y + box->y, box->x2 - box->x, box->y2 - box->y};
-    SDL_RenderFillRect(vis.renderer, &rect);
-    SDL_SetRenderDrawColor(vis.renderer, outline.r, outline.g, outline.b, outline.a);
-    SDL_RenderDrawRect(vis.renderer, &rect);
+    if(fill.a > 0){
+        SDL_SetRenderDrawColor(vis.renderer, fill.r, fill.g, fill.b, fill.a);
+        SDL_RenderFillRect(vis.renderer, &rect);    
+    }
+    if(outline.a > 0){
+        SDL_SetRenderDrawColor(vis.renderer, outline.r, outline.g, outline.b, outline.a);
+        SDL_RenderDrawRect(vis.renderer, &rect);    
+    }
 }
 
 void RenderBox(Aabb *box, uint8_t r, uint8_t g, uint8_t b, uint8_t a){
@@ -436,153 +527,94 @@ void RenderBoundingVolumeRoot(void){
     SDL_RenderDrawRect(vis.renderer, &rect);
 }
 
-void RenderBvChild(Bv *bv, int withbg){
+void RenderBvChildOutline(Bv *bv, SDL_Color outline){
     SDL_Rect rect = {vis.x + bv->x, vis.y + bv->y, bv->x2 - bv->x, bv->y2 - bv->y};
-    if(withbg){
-        SDL_SetRenderDrawColor(vis.renderer, 250, 50, 50, 25);    
-        SDL_RenderFillRect(vis.renderer, &rect);
-    }
-    SDL_SetRenderDrawColor(vis.renderer, 255, 255, 255, 255);
+    // if(withbg){
+    //     SDL_SetRenderDrawColor(vis.renderer, 250, 50, 50, 25);    
+    //     SDL_RenderFillRect(vis.renderer, &rect);
+    // }
+    SDL_SetRenderDrawColor(vis.renderer, outline.r, outline.g, outline.b, outline.a);
     SDL_RenderDrawRect(vis.renderer, &rect);
 }
 
-void RenderText(char *str, int x, int y){
-    SDL_Color black = {0,0,0,255};
-    SDL_Surface* textSurface = TTF_RenderText_Blended(vis.fontCalibri16, str, black);
+void RenderTextScaled(char *str, int x, int y, float scale){
+    float oldScale;
+    SDL_RenderGetScale(vis.renderer, &oldScale, &oldScale);
+    SDL_RenderSetScale(vis.renderer, scale, scale);
+    SDL_Surface* textSurface = TTF_RenderText_Blended(vis.mainFont, str, SdlColorWhite);
     SDL_Texture* texture = SDL_CreateTextureFromSurface(vis.renderer, textSurface);
-    SDL_Rect renderQuad = { x, y, textSurface->w, textSurface->h };
+    SDL_Rect renderQuad = { (vis.x + x) * oldScale, (vis.y + y) * oldScale, textSurface->w, textSurface->h };
     SDL_RenderCopy(vis.renderer, texture, NULL, &renderQuad);
     SDL_FreeSurface(textSurface);
     SDL_DestroyTexture(texture);
+    SDL_RenderSetScale(vis.renderer, oldScale, oldScale);
 }
 
-void RenderInfo(void){
-    char entityText[100];
-    snprintf(entityText, 100, "Entities: %u", boxCount);
-    RenderText(entityText, 20, 1100);
-    char bvDimText[100];
-    snprintf(bvDimText, 100, "Bounding Volume Size: [%ux, %uy, %uw, %uh]", bvRoot->x,bvRoot->y,bvRoot->x2 - bvRoot->x,bvRoot->y2 - bvRoot->y);
-    RenderText(bvDimText, 20, 1130);
-}
-
-void DrawBg(void){
+void RenderStepBoxLoad(void){    
     SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
     SDL_RenderClear(vis.renderer);
-    RenderBoundingVolumeRoot();
-    RenderInfo();
-}
-
-void RenderStepBoxLoad(void){
-    return;
-    DrawBg();
 
     for(int i = 0; i < boxCount; ++i){
         RenderBox(boxes + i, 255, 0, 0, 255);
     }
 
+    static char entityCountTxt[40];
+    snprintf(entityCountTxt, 40, "Loading Entities [%i]", boxCount);
+    RenderTextScaled(entityCountTxt, bvs[0].x, bvs[0].y2 + 10, 1);
+
+    RenderBoundingVolumeRoot();
+
     SDL_RenderPresent(vis.renderer);
 
-    static int rsBoxLoadDrawDelay = 1;//150;
+    static int rsBoxLoadDrawDelay = 100;
     SDL_Delay(rsBoxLoadDrawDelay);
     if(rsBoxLoadDrawDelay > 1) rsBoxLoadDrawDelay -= 1;
+
+    
 }
 
-void RenderStepSplitBv(void){
-    DrawBg();
+void RenderStepSplitBv(void){    
+    SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(vis.renderer);
+
 
     for(int i = 0; i < boxCount; ++i){
         RenderBox(boxes + i, 150, 0, 0, 255);
     }
 
     for(int i = 1; i < bvCount; ++i){
-        RenderBvChild(bvs + i, 1);
+        RenderBvChildOutline(bvs + i, SdlColorWhite);
     }
 
+    static char quadTreeSplitTxt[40];
+    snprintf(quadTreeSplitTxt, 40, "Creating quad tree leafs [%i]", bvCount);
+    RenderTextScaled(quadTreeSplitTxt, bvs[0].x, bvs[0].y2 + 10, 1);
+
     SDL_RenderPresent(vis.renderer);
-    SDL_Delay(80);
+    SDL_Delay(100);
 }
 
-static SDL_Color bvColors[210] = {
-    {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-        {0xFF, 0xFF, 0x00, 0xFF},//yellow
-        {0xAA, 0x10, 0x10, 0xFF},//red
-        {0x0, 0xFF, 0x00, 0xFF},//green
-        {0x9b, 0xcd, 0xff, 0xFF},//light blue
 
-        {0xc1,0x9b,0xff,0xff},//purple
-        {0xF0,0x32,0xE6,0xFF},//magenta
-        {0xff,0x98,0x11,0xff},//orange
-        {0xbb,0xff,0x11,0xff},//greenish
-
-        {0xff,0xd4,0x00,0xff},//yellowish
-        {0x77,0x42,0xff,0xff},
-        {0x42,0xe2,0xff,0xff},
-        {0xff,0x88,0x00,0xff},//orangeish
-        
-        {0x0, 0x72,0xff,0xff},//blue
-        {0xa0,0x0,0x45,0xff},//red
-        {0x6e,0xff,0,0xff},//green
-        {0x80,0x80,0,0xff},//olive
-           {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-           {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-           {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-        {0,0,0,0},
-        {0x00, 0xB3, 0xE6, 0xFF},
-        
-        {0xE6, 0xB3, 0x33, 0xFF},
-        {0x33, 0x66, 0xE6, 0xFF},
-        {0x99, 0x99, 0x66, 0xFF},
-        {0x99, 0xFF, 0x99, 0xFF},
-        {0xB3, 0x4D, 0x4D, 0xFF},
-
-        {0xFF, 0xB3, 0x99, 0xFF},
-        {0xFF, 0x33, 0xFF, 0xFF},
-        {0x80, 0xB3, 0x00, 0xFF},
-        {0x80, 0x99, 0x00, 0xFF}
-        //{0xE6, 0xE3, 0xB3, 0xFF}
-//     {0x66, 0x80, 0xB3},
-//     {0x66, 0x99, 0x1A}, 
-//     {0xFF, 0x99, 0xE6}
-};
-    
-    //       ', ', 
-    //        '', , ', '
-    //        '#CCFF1A', '#FF1A66', '#E6331A', '#33FFCC',
-    //       '#66994D', '#B366CC', '#4D8000', '#B33300', '#CC80CC', 
-    //       '#66664D', '#991AFF', '#E666FF', '#4DB3FF', '#1AB399',
-    //       '#E666B3', '#33991A', '#CC9999', '#B3B31A', '#00E680', 
-    //       '#4D8066', '#809980', '#E6FF80', '#1AFF33', '#999933',
-    //       '#FF3380', '#CCCC00', '#66E64D', '#4D80CC', '#9900B3', 
-    //       '#E64D66', '#4DB380', '#FF4D4D', '#99E6E6', '#6666FF'];
-
-void RenderStepInsertIntoBV(Aabb *bv, Aabb *insert, Aabb *intersection){
+void RenderStepInsertIntoBV(Aabb *bv, Aabb *insert, Aabb *intersection){    
     static int timesDrawn = 0;
     fadeBv:
-    DrawBg();
+    SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(vis.renderer);
 
+    //original non sorted entities background layer
     for(int i = 0; i < boxCount; ++i){
         RenderBox(boxes + i, 25, 0, 0, 255);
     }
 
-     for(int i = 1; i < bvCount; ++i){
-        RenderBvChild(bvs + i, 0);
+    //quad tree outlines
+    for(int i = 1; i < bvCount; ++i){
+        RenderBvChildOutline(bvs + i, SdlColorWhite);
     }
 
     RenderBoxEx(insert, (SDL_Color){0, 0, 0, 255}, (SDL_Color){255, 0, 0, 255});
     //RenderBox(intersection, 255, 255, 255, 255);
 
+    //quad tree entities
     for(int i = 0; i < bvCount; ++i){
         Bv *currBv = bvs + i;
         if(currBv->entityCount <= 0) continue;
@@ -593,25 +625,280 @@ void RenderStepInsertIntoBV(Aabb *bv, Aabb *insert, Aabb *intersection){
         }
     }
 
-    if(timesDrawn < 50){
+
+    
+    static char spatialTxt[40];
+    if(timesDrawn < 80){
         static uint8_t bvAlpha = 255;
-        int alphaChange = 2 + (timesDrawn/50) * 10;
+        int alphaChange = 2 + ((float)timesDrawn/80.0f) * 10;
         while(bvAlpha - alphaChange > 0){
-            bvAlpha-=alphaChange;
+            bvAlpha -= alphaChange;
             SDL_SetRenderDrawColor(vis.renderer, 100, 100, 100, bvAlpha);
             SDL_Rect rect = {vis.x + bv->x, vis.y + bv->y, bv->x2 - bv->x, bv->y2 - bv->y};
             SDL_RenderFillRect(vis.renderer, &rect); 
+
+            
+            snprintf(spatialTxt, 40, "Spatial indexes [%i]", bvEntityCount);
+            RenderTextScaled(spatialTxt, bvs[0].x, bvs[0].y2 + 10, 1);
 
             SDL_RenderPresent(vis.renderer);        
             SDL_Delay(1);
             goto fadeBv;
         }
         bvAlpha = 255;
+    } else {        
+        snprintf(spatialTxt, 40, "Spatial indexes >> [%i]", bvEntityCount);
+        RenderTextScaled(spatialTxt, bvs[0].x, bvs[0].y2 + 10, 1);
     }
-    
     ++timesDrawn;
+
+
     SDL_RenderPresent(vis.renderer);
 
+}
+
+
+void RenderStepTransitionToInterTest(void){   
+    SDL_Delay(1000);
+
+    float zoomStart = SDL_GetTicks() / 1000.0f;
+    float zoom = 1.3f;
+    float fadeOut = 255;
+    float borderFadeOut = 100;
+    while(zoom < 5.0f){
+        zoom = Ease(EaseTypeInOutQuad, zoomStart, 4.0f, 1.3f, 5.0f);
+        fadeOut = Ease(EaseTypeInOutQuad, zoomStart, 4.0f, 255, 0);
+        borderFadeOut = Ease(EaseTypeInOutQuad, zoomStart, 4.0f, 100, 0);
+        SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+        SDL_RenderClear(vis.renderer);
+
+        Bv *bv = bvs + 5;
+
+        for(int i = 0; i < bvCount; ++i){
+            Bv *currBv = bvs + i;
+            if(currBv->entityCount <= 0) continue;
+
+            for(int ei = 0; ei < currBv->entityCount; ++ei){
+                Aabb *ent = currBv->entities + ei;
+                SDL_Color col = bvColors[i];
+                if(i != 5){
+                    col.a = fadeOut;    
+                }
+                RenderBoxEx(ent, col, (SDL_Color) {0, 0, 0, 255});    
+            }
+        }
+
+        for(int i = 1; i < bvCount; ++i){
+            if(i != 5){
+                RenderBvChildOutline(bvs + i, (SDL_Color){255,255,255, borderFadeOut});
+            }
+            
+        }
+
+        //outline the quad we are zooming into
+        RenderBvChildOutline(bv, SdlColorRed);
+
+        SDL_RenderPresent(vis.renderer);
+        SDL_RenderSetScale(vis.renderer, zoom, zoom);
+        SDL_Delay(16);
+    }
+   
+}
+
+
+void RenderStepInterTest(Aabb *inter){    
+    SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(vis.renderer);
+
+    Bv *bv = bvs + 5;
+
+    //entity layer bg
+    for(int ei = 0; ei < bv->entityCount; ++ei){
+        Aabb *ent = bv->entities + ei;
+        SDL_Color col = SdlColorWhite;
+        col. a = 100;
+        RenderBoxEx(ent, col, (SDL_Color) {0, 0, 0, 255});    
+    }
+
+    RenderBoxEx(rsInterStepBox1, (SDL_Color){0, 0, 0, 0}, (SDL_Color){255, 0, 0, 255});
+    RenderBoxEx(rsInterStepBox2, (SDL_Color){0, 0, 0, 0}, (SDL_Color){255, 0, 0, 255});
+
+    //intersection layer
+    for(int ei = 0; ei < bv->interEntityCount; ++ei){
+        Aabb *ent = bv->interEntities + ei;
+        RenderBoxEx(ent, RandomColor(ei)/*(SDL_Color){150, 50, 90, 255}*/, (SDL_Color) {0, 0, 0, 0});    
+    }
+
+    RenderBoxEx(inter, (SDL_Color){255, 0, 0, 255}, (SDL_Color){0, 0, 0, 0});
+
+    RenderBvChildOutline(bv, SdlColorRed);
+
+    static char interTxt[50];
+    snprintf(interTxt, 50, "Unique Intersections (No Overlaps) [%i]", bv->interEntityCount);
+    RenderTextScaled(interTxt, bv->x, bv->y2 + 2, 1);
+
+    SDL_RenderPresent(vis.renderer);
+    SDL_Delay(200);
+}
+
+
+void RenderStepInterSteprResultsTransition(void){
+
+    SDL_Delay(1000);
+
+    float alphaStart = SDL_GetTicks() / 1000.0f;
+    float alpha = 100;
+    while(alpha > 0){
+        SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+        SDL_RenderClear(vis.renderer);
+
+        alpha = Ease(EaseTypeInOutQuad, alphaStart, 3.0f, 100, 0);
+        Bv *bv = bvs + 5;
+
+        //entity layer bg
+        for(int ei = 0; ei < bv->entityCount; ++ei){
+            Aabb *ent = bv->entities + ei;
+            SDL_Color col = SdlColorWhite;
+            col.a = alpha;
+            RenderBoxEx(ent, col, (SDL_Color) {0, 0, 0, 255});    
+        }
+
+        //intersection layer
+        for(int ei = 0; ei < bv->interEntityCount; ++ei){
+            Aabb *ent = bv->interEntities + ei;
+            SDL_Color col = RandomColor(ei);
+            col.a = 255;//275 - alpha;
+            RenderBoxEx(ent, col, (SDL_Color) {0, 0, 0, 0});    
+        }
+
+        RenderBvChildOutline(bv, SdlColorRed);
+
+        static char interTxt[50];
+        snprintf(interTxt, 50, "Unique Intersections (No Overlaps) [%i]", bv->interEntityCount);
+        RenderTextScaled(interTxt, bv->x, bv->y2 + 2, 1);
+
+        SDL_RenderPresent(vis.renderer);
+        SDL_Delay(10);
+    }
+
+    SDL_Delay(500);
+
+    float zoomStart = SDL_GetTicks() / 1000.0f;
+    float zoom = 5.0f;
+    float fadeIn = 0;
+    while(zoom > 1.3f){
+        zoom = Ease(EaseTypeInOutQuad, zoomStart, 4.0f, 5.0f, 1.3f);
+        fadeIn = Ease(EaseTypeInOutQuad, zoomStart, 4.0f, 0, 255);
+        SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+        SDL_RenderClear(vis.renderer);
+
+        for(int i = 1; i < bvCount; ++i){
+            RenderBvChildOutline(bvs + i, (SDL_Color){255,255,255, fadeIn});
+        }
+
+        for(int i = 0; i < bvCount; ++i){
+            Bv *currBv = bvs + i;
+            if(currBv->entityCount <= 0) continue;
+
+            for(int ei = 0; ei < currBv->interEntityCount; ++ei){
+                Aabb *ent = currBv->interEntities + ei;
+                SDL_Color col = RandomColor(ei);
+                if(i != 5){
+                    col.a = fadeIn;    
+                }
+                RenderBoxEx(ent, col, (SDL_Color) {0, 0, 0, 0});    
+            }
+        }
+
+        SDL_RenderPresent(vis.renderer);
+        SDL_RenderSetScale(vis.renderer, zoom, zoom);
+        SDL_Delay(10);
+    }
+
+    SDL_Delay(2000);
+
+
+    int bvDrawn = 0;
+    int eiDrawn = 0;
+
+    while(1){
+        SDL_SetRenderDrawColor(vis.renderer, 0, 0, 0, 255);
+        SDL_RenderClear(vis.renderer);
+
+        for(int i = 1; i < bvCount; ++i){
+            RenderBvChildOutline(bvs + i, (SDL_Color){255,255,255, 255});
+        }
+
+        for(int i = 0; i < bvCount; ++i){
+            Bv *currBv = bvs + i;
+            if(currBv->entityCount <= 0) continue;
+
+            if(i < bvDrawn){
+                int bvArea = 0;
+                //sum area in quad
+                for(int ei = 0; ei < currBv->interEntityCount; ++ei){
+                    Aabb *ent = currBv->interEntities + ei;
+                    bvArea += GetArea(ent);
+                }
+                int sides = sqrt(bvArea);
+                //fill rect in quad representing total area
+                SDL_Rect r = {
+                    vis.x + currBv->x, vis.y + currBv->y,
+                    sides, sides
+                };
+                SDL_Color col = bvColors[i];
+                SDL_SetRenderDrawColor(vis.renderer, col.r, col.g, col.b, col.a);
+                SDL_RenderFillRect(vis.renderer, &r);
+                static char areaTxt[20];
+                snprintf(areaTxt, 20, "%i sq in", bvArea);
+                RenderTextScaled(areaTxt, currBv->x + 10, currBv->y2 - 30, 1);
+                continue;
+            }
+
+            for(int ei = 0; ei < currBv->interEntityCount; ++ei){
+                if(bvDrawn == 0) bvDrawn = i;
+
+                Aabb *ent = currBv->interEntities + ei;
+                SDL_Color col = RandomColor(ei);
+                if(i <= bvDrawn && ei <= eiDrawn){
+                    int area = GetArea(ent);
+                    ent->x = currBv->x;
+                    ent->y = currBv->y + ei;
+                    ent->x2 = ent->x + area;
+                    ent->y2 = ent->y + 1;    
+                }
+                
+                RenderBoxEx(ent, col, (SDL_Color) {0, 0, 0, 0});    
+            }
+            if(i == bvDrawn){
+                ++eiDrawn;
+                if(eiDrawn >= currBv->interEntityCount){
+                    ++bvDrawn;
+                    eiDrawn = 0;
+                }
+            }
+            
+        }
+
+        SDL_RenderPresent(vis.renderer);
+        SDL_Delay(1);
+
+        if(bvDrawn == bvCount){
+            ++bvDrawn;
+            continue;
+        }
+        if(bvDrawn > bvCount){
+
+            break;
+        }
+    }
+
+    static char totalTxt[40];
+    snprintf(totalTxt, 40, "Overlapping Area = %i sq in", areaSum);
+    RenderTextScaled(totalTxt, bvs[0].x, bvs[0].y2 + 10, 1);
+    SDL_RenderPresent(vis.renderer);
+
+    SDL_Delay(20000);
 }
 
 #endif
