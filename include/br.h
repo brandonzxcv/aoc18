@@ -20,7 +20,7 @@ float Lerp(float start, float end, float t){
     return start + (end - start) * t;
 }
 
-FILE * open_file(char *path, char *mode){
+FILE * file_open(char *path, char *mode){
     FILE *f = fopen(path, mode);
     if(!f){
         printf("Failed to open %s", path);
