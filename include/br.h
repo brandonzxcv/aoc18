@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define MAX(a,b) (a > b) ? a : b;
 #define MIN(a,b) (a < b) ? a : b;
@@ -27,4 +28,25 @@ FILE * file_open(char *path, char *mode){
         exit(1);
     }
     return f;
+}
+
+
+typedef struct{
+    void *base;
+    size_t offset;
+    size_t size;
+} LinearAlloc;
+
+void lalloc_init(LinearAlloc *la, size_t size){
+    la->size = size;
+    la->base = malloc(size);
+    memset(la->base, 0, size);
+    la->offset = 0;
+}
+
+void * lalloc(LinearAlloc *la, size_t size){
+    if(la->offset + size > la->size) {exit(1);}
+    void *region = ((char *)la->base) + la->offset;
+    la->offset += size;
+    return region;
 }
