@@ -63,10 +63,12 @@ int highest_power(int squareSize, int *tx, int *ty){
 int main(void){
 
     build_cell_grid(1788);
+    //part 1
     int tx, ty;
     int highestPower = highest_power(3, &tx, &ty);
     printf("Total Power %i starting at (%i,%i)\n", highestPower, tx, ty);
 
+    //part 2
     int bestTx = 0;
     int bestTy = 0;
     int bestPower = 0;
